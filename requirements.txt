@@ -1,0 +1,11 @@
+torch
+pytorch-lightning
+segmentation-models-pytorch
+albumentations
+opencv-python
+scikit-learn
+tensorboard
+Pillow
+scikit-image
+matplotlib
+pybelt
