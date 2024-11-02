@@ -13,6 +13,13 @@ Before you begin, ensure you have met the following requirements:
 * Pytorch Lightning
 * Other dependencies listed in `requirements.txt`
 
+## Running with Different Datasets
+
+This code supports multiple datasets, including **Sensation** and **Cityscapes**. 
+
+### To Use with Cityscapes Dataset
+To run the code with the **Cityscapes** dataset, ensure you replace `builder.py` and `training_pipeline.py` with the versions specific to Cityscapes.
+
 ## Installation
 
 1. Clone the repository:
