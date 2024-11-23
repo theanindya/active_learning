@@ -1,3 +1,4 @@
+# This version of training_pipeline.py is specific to the SENSATION dataset. To use cityscape dataset, run the 2nd phase of the code only
 import urllib.request
 urllib.request.urlopen = lambda *args, **kwargs: None
 import os
@@ -194,6 +195,199 @@ def main():
     # Save the final model
     torch.save(final_model.state_dict(), os.path.join(args.ckpt, "final_model_al.pth"))
     logger.info(f"Final model saved to {os.path.join(args.ckpt, 'final_model_al.pth')}")
+
+if __name__ == "__main__":
+    main()
+
+# This version of training_pipeline.py is specific to the Cityscapes dataset.
+# Ensure that data loaders, loss functions, and transformations are correctly set up for Cityscapes.
+import os
+import argparse
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.strategies import DDPStrategy
+from sensation.train import builder, tools
+from sensation.utils import data
+from torch.utils.data import DataLoader
+
+os.environ["NO_ALBU_VCHECK"] = "1"
+# Define logging
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+def loss_function_arg(string):
+    try:
+        return builder.LossFunction[string.upper()]
+    except KeyError:
+        raise argparse.ArgumentTypeError(f"{string} is not a valid loss function.")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Training pipeline for SENSATION segmentation models."
+    )
+    parser.add_argument(
+        "--ckpt",
+        default="checkpoints",
+        help="Path where to store or load checkpoints. (Default = checkpoints)",
+    )
+    parser.add_argument(
+        "--data_root",
+        required=True,
+        help="Path to the dataset to use (Cityscapes, Mapillary, or SENSATION).",
+    )
+    parser.add_argument(
+        "--data_type",
+        type=str,
+        choices=["cityscapes", "mapillary", "sensation"],
+        required=True,
+        help="Specify the dataset to be used for training.",
+    )
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=0.0001,
+        help="Learning rate (default = 0.0001)",
+    )
+    parser.add_argument(
+        "--classes",
+        type=int,
+        default=11,
+        help="Number of classes to use for training (default = 11)",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=1,
+        help="Number of epochs to use for training (default = 1).",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=16,  # Increased batch size
+        help="Number of batches to use during training. (default = 16).",
+    )
+    parser.add_argument(
+        "--model_arc",
+        type=str,
+        default="UNet:resnet18:11",
+        help="The model architecture to use during training. (default = UNet:resnet18:11).",
+    )
+    parser.add_argument(
+        "--freeze",
+        action="store_true",
+        help="Enable freezing of layers in a model.",
+        default=False,
+    )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="Progress training on last epoch state if training was interrupted.",
+        default=False,
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run test on defined checkpoint with defined testset by data type.",
+        default=False,
+    )
+    parser.add_argument(
+        "--loss",
+        type=loss_function_arg,
+        choices=list(builder.LossFunction),
+        default=builder.LossFunction.DICE,
+        help="The loss function to use.",
+    )
+    parser.add_argument(
+        "--precision",
+        type=str,
+        choices=["16", "32", "64", "bf16", "mixed"],
+        default="32",
+        help="Precision for training. (default = 32).",
+    )
+
+    args = parser.parse_args()
+
+    logger.info("Starting SENSATION training pipeline.")
+
+    logger_tb = TensorBoardLogger("tb_logs", name="mapillary_deeplab")
+
+    if args.data_type == "cityscapes":
+        train_dataset, val_dataset, _ = builder.prepare_cityscapes(
+            args.data_root, batch_size=args.batch_size
+        )
+    elif args.data_type == "mapillary":
+        train_dataset, val_dataset, _ = builder.prepare_mapillary(
+            args.data_root, batch_size=args.batch_size
+        )
+    elif args.data_type == "sensation":
+        train_dataset, val_dataset, _ = builder.prepare_sensation(
+            root_dir=args.data_root, batch_size=args.batch_size
+        )
+    else:
+        raise ValueError("Unknown dataset")
+
+    ckpt_path = data.get_best_checkpoint(args.ckpt)
+    resume_ckpt = ""
+    if args.progress and ckpt_path is not None:
+        logger.info(f"Starting training on last status with checkpoint: {ckpt_path}")
+        resume_ckpt = ckpt_path
+        ckpt_path = ""
+
+    model = builder.create_seg_model(
+        model_arc=args.model_arc,
+        epochs=args.epochs,
+        num_classes=args.classes,
+        learning_rate=args.learning_rate,
+        batch_size=args.batch_size,
+        loss=builder.get_loss(args.loss),
+        ckpt_path=ckpt_path,
+        train_dataloader=train_dataset,
+        val_dataloader=val_dataset,
+        test_dataloader=None,
+    )
+
+    if args.test:
+        logger.info("Starting test mode")
+        trainer = Trainer()
+        trainer.test(model)
+        exit()
+
+    # Define checkpoint callback
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=args.ckpt,
+        filename="{epoch}-{val_loss:.5f}-{val_iou:.5f}",
+        save_top_k=3,
+        monitor="val_iou",
+        mode="max",
+    )
+
+    # Freeze layers if needed
+    if args.freeze:
+        model = tools.freeze_layers(model)
+
+    # Handle precision argument
+    if args.precision == "mixed":
+        precision = "16-mixed"
+    else:
+        precision = args.precision
+
+    trainer = Trainer(
+        logger=logger_tb,
+        max_epochs=args.epochs,
+        precision=precision,
+        callbacks=[checkpoint_callback],
+        accelerator='gpu',  # Assumes you have a GPU
+        devices=1,  # Adjust based on your GPU availability
+        
+        
+    )
+
+    if args.progress:
+        trainer.fit(model, ckpt_path=resume_ckpt)
+    else:
+        trainer.fit(model)
 
 if __name__ == "__main__":
     main()
