@@ -40,8 +40,8 @@ To run the code with the **Cityscapes** dataset, ensure you replace `builder.py`
 To start training with active learning, use the `training_pipeline.py` script. Below are the command-line arguments you can use:
 
 * `--ckpt`: Path where to store or load checkpoints.
-* `--data_root`: Path to the dataset to use (Cityscapes, Mapillary, or SENSATION).
-* `--data_type`: Specify the dataset to be used for training (`cityscapes`, `mapillary`, `sensation`).
+* `--data_root`: Path to the dataset to use (Cityscapes or SENSATION).
+* `--data_type`: Specify the dataset to be used for training (`cityscapes`, `sensation`).
 * `--learning_rate`: Learning rate for fine-tuning.
 * `--classes`: Number of classes to use for training.
 * `--epochs`: Number of epochs to use for each active learning iteration.
@@ -74,14 +74,7 @@ To evaluate the model on a test set, use the `evaluate_model.py` script. Update 
 
 * `sensation/active_learning.py`: Contains the `ActiveLearningManager` class for managing the active learning process.
 * `sensation/train/builder.py`: Contains functions for creating segmentation models and preparing datasets.
-* `sensation/train/data.py`: Contains dataset classes for Cityscapes, Mapillary, and SENSATION datasets.
+* `sensation/train/data.py`: Contains dataset classes for Cityscapes and SENSATION datasets.
 * `sensation/models/segmentation.py`: Contains segmentation model classes.
 * `sensation/utils`: Contains utility functions for data processing, visualization, and analysis.
 
-## Contributing
-
-Contributions are welcome! Please fork the repository and create a pull request with your changes.
-
-## License
-
-This project is licensed under the MIT License.
